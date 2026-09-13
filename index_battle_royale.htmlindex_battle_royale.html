@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Battle Royale 3D</title>
+<style>
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#87ceeb;font-family:Arial,sans-serif}
+  #hud{position:fixed;top:12px;left:12px;z-index:10;color:white;font-size:18px;
+       background:rgba(0,0,0,.38);padding:10px 14px;border-radius:10px;text-shadow:1px 1px 2px #000}
+  #cross{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;color:white;font-size:28px;text-shadow:0 0 4px #000}
+  #msg{position:fixed;top:38%;width:100%;text-align:center;z-index:20;color:#fff;font-size:32px;
+       font-weight:bold;text-shadow:2px 2px 5px #000}
+  #tip{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:10;
+       color:#fff;background:rgba(0,0,0,.4);padding:8px 14px;border-radius:8px}
+</style>
+</head>
+<body>
+<div id="hud"></div>
+<div id="cross">+</div>
+<div id="msg">คลิกเพื่อเริ่ม!<br><small>WASD เดิน • Shift วิ่ง • เมาส์เล็ง • คลิกยิง • R เติมกระสุน</small></div>
+<div id="tip">Battle Royale 3D</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x86c8e8);
+scene.fog=new THREE.Fog(0x86c8e8,80,360);
+
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,1000);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const sun=new THREE.DirectionalLight(0xfff1d0,1.5);
+sun.position.set(80,130,60); sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-220; sun.shadow.camera.right=220;
+sun.shadow.camera.top=220; sun.shadow.camera.bottom=-220;
+scene.add(sun);
+scene.add(new THREE.HemisphereLight(0xbde8ff,0x52663d,1.0));
+
+const ground=new THREE.Mesh(
+  new THREE.PlaneGeometry(800,800,40,40),
+  new THREE.MeshStandardMaterial({color:0x4d8f43,roughness:.95})
+);
+ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
+
+// บ้าน
+function makeHouse(x,z,scale=1){
+  const g=new THREE.Group();
+  const wall=new THREE.Mesh(new THREE.BoxGeometry(12*scale,7*scale,10*scale),
+    new THREE.MeshStandardMaterial({color:0xc9a57a,roughness:.9}));
+  wall.position.y=3.5*scale; wall.castShadow=wall.receiveShadow=true; g.add(wall);
+
+  const roof=new THREE.Mesh(new THREE.ConeGeometry(9*scale,5*scale,4),
+    new THREE.MeshStandardMaterial({color:0x713d2a,roughness:.9}));
+  roof.rotation.y=Math.PI/4; roof.position.y=9.5*scale;
+  roof.castShadow=true; g.add(roof);
+
+  const door=new THREE.Mesh(new THREE.BoxGeometry(2.2*scale,4*scale,.25*scale),
+    new THREE.MeshStandardMaterial({color:0x4a2b1a}));
+  door.position.set(0,2*scale,5.12*scale); g.add(door);
+
+  for(const sx of [-3.5,3.5]){
+    const win=new THREE.Mesh(new THREE.BoxGeometry(2.2*scale,1.8*scale,.2*scale),
+      new THREE.MeshStandardMaterial({color:0x86c8e8,metalness:.1,roughness:.25}));
+    win.position.set(sx,4*scale,5.12*scale); g.add(win);
+  }
+  g.position.set(x,0,z); scene.add(g); return g;
+}
+
+// ต้นไม้สมจริงขึ้น
+function makeTree(x,z,s=1){
+  const g=new THREE.Group();
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.45*s,.7*s,5*s,10),
+    new THREE.MeshStandardMaterial({color:0x6b4226,roughness:1}));
+  trunk.position.y=2.5*s; trunk.castShadow=true; g.add(trunk);
+  for(let i=0;i<3;i++){
+    const crown=new THREE.Mesh(new THREE.SphereGeometry((2.1-i*.25)*s,12,10),
+      new THREE.MeshStandardMaterial({color:0x286b2b,roughness:.95}));
+    crown.position.set((i-1)*.25*s,(5.2+i*1.2)*s,(i%2)*.25*s);
+    crown.castShadow=true; g.add(crown);
+  }
+  g.position.set(x,0,z); scene.add(g); return g;
+}
+
+function makeRock(x,z,s){
+  const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(s,1),
+    new THREE.MeshStandardMaterial({color:0x77756c,roughness:1}));
+  rock.position.set(x,s*.55,z);
+  rock.scale.y=.65; rock.castShadow=rock.receiveShadow=true;
+  scene.add(rock); return rock;
+}
+
+const obstacles=[];
+for(let i=0;i<32;i++){
+  const x=(Math.random()-.5)*480,z=(Math.random()-.5)*480;
+  if(Math.hypot(x,z)>45) obstacles.push(makeTree(x,z,.8+Math.random()*.65));
+}
+for(let i=0;i<8;i++){
+  const x=(Math.random()-.5)*300,z=(Math.random()-.5)*300;
+  if(Math.hypot(x,z)>55) makeHouse(x,z,.8+Math.random()*.45);
+}
+for(let i=0;i<28;i++){
+  const x=(Math.random()-.5)*500,z=(Math.random()-.5)*500;
+  if(Math.hypot(x,z)>35) makeRock(x,z,.5+Math.random()*1.2);
+}
+
+// ตัวละครมนุษย์แบบ low-poly
+function makeCharacter(bodyColor,skinColor){
+  const g=new THREE.Group();
+  const mat=new THREE.MeshStandardMaterial({color:bodyColor,roughness:.8});
+  const skin=new THREE.MeshStandardMaterial({color:skinColor,roughness:.7});
+
+  const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.62,1.25,6,10),mat);
+  torso.position.y=1.55; torso.castShadow=true; g.add(torso);
+
+  const head=new THREE.Mesh(new THREE.SphereGeometry(.46,16,12),skin);
+  head.position.y=2.75; head.castShadow=true; g.add(head);
+
+  const armGeo=new THREE.CapsuleGeometry(.18,.75,5,8);
+  const legGeo=new THREE.CapsuleGeometry(.21,.9,5,8);
+  for(const side of [-1,1]){
+    const arm=new THREE.Mesh(armGeo,mat);
+    arm.position.set(side*.78,1.65,.05); arm.rotation.z=side*.18;
+    arm.castShadow=true; g.add(arm);
+    const leg=new THREE.Mesh(legGeo,mat);
+    leg.position.set(side*.3,.65,0); leg.castShadow=true; g.add(leg);
+  }
+
+  const gun=new THREE.Mesh(new THREE.BoxGeometry(.22,.22,1.65),
+    new THREE.MeshStandardMaterial({color:0x252525,metalness:.6,roughness:.35}));
+  gun.position.set(.62,1.7,.75); gun.rotation.x=-.08; gun.castShadow=true; g.add(gun);
+
+  return g;
+}
+
+// ปืนมุมมองบุคคลที่หนึ่ง
+const gunView=new THREE.Group();
+const gvBody=new THREE.Mesh(new THREE.BoxGeometry(.22,.28,1.35),
+  new THREE.MeshStandardMaterial({color:0x202020,metalness:.65,roughness:.3}));
+gvBody.position.set(.42,-.28,-.75); gvBody.rotation.x=-.05;
+gunView.add(gvBody);
+const gvGrip=new THREE.Mesh(new THREE.BoxGeometry(.2,.55,.25),
+  new THREE.MeshStandardMaterial({color:0x303030,roughness:.6}));
+gvGrip.position.set(.42,-.55,-.48); gvGrip.rotation.x=-.25; gunView.add(gvGrip);
+camera.add(gunView); scene.add(camera);
+
+// ศัตรู
+const enemies=[];
+const player={x:0,z:0,hp:100,armor:50,kills:0,ammo:30,maxAmmo:30};
+const zone={x:0,z:0,r:170};
+function spawnEnemy(){
+  const a=Math.random()*Math.PI*2, d=35+Math.random()*zone.r*.7;
+  const mesh=makeCharacter(0x8b2020,0xd5a17e);
+  mesh.position.set(Math.cos(a)*d,0,Math.sin(a)*d);
+  scene.add(mesh);
+  enemies.push({mesh,cool:30+Math.random()*80});
+}
+for(let i=0;i<10;i++)spawnEnemy();
+
+// ไอเทม
+const items=[];
+function spawnItem(){
+  const type=Math.random()<.5?'armor':'med';
+  const mesh=new THREE.Mesh(
+    new THREE.BoxGeometry(1,1,1),
+    new THREE.MeshStandardMaterial({color:type==='armor'?0x2266cc:0xdddddd,roughness:.5})
+  );
+  mesh.position.set((Math.random()-.5)*220,.6,(Math.random()-.5)*220);
+  mesh.castShadow=true; scene.add(mesh);
+  items.push({mesh,type});
+}
+for(let i=0;i<12;i++)spawnItem();
+
+// วงเขต
+const ring=new THREE.Mesh(new THREE.RingGeometry(.98,1,96),
+  new THREE.MeshBasicMaterial({color:0x00eaff,side:THREE.DoubleSide,transparent:true,opacity:.65}));
+ring.rotation.x=-Math.PI/2; ring.position.y=.08; ring.scale.set(zone.r,zone.r,1);
+scene.add(ring);
+
+let yaw=0,pitch=0,keys={},mouseDown=false,alive=true,cool=0;
+let bullets=[];
+addEventListener('keydown',e=>{
+  keys[e.key.toLowerCase()]=true;
+  if(e.key.toLowerCase()==='r' && player.ammo<player.maxAmmo)player.ammo=player.maxAmmo;
+});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+addEventListener('mousemove',e=>{
+  if(document.pointerLockElement){
+    yaw-=e.movementX*.002; pitch-=e.movementY*.002;
+    pitch=Math.max(-1.45,Math.min(1.45,pitch));
+  }
+});
+addEventListener('mousedown',()=>{
+  if(!document.pointerLockElement){
+    renderer.domElement.requestPointerLock();
+    document.getElementById('msg').innerHTML='';
+  }else mouseDown=true;
+});
+addEventListener('mouseup',()=>mouseDown=false);
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+function die(text){
+  alive=false; document.exitPointerLock();
+  document.getElementById('msg').innerHTML=text+'<br><small>กด F5 เพื่อเล่นใหม่</small>';
+}
+
+function shoot(){
+  if(player.ammo<=0)return;
+  player.ammo--;
+  const dir=new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(pitch,yaw,0,'YXZ'));
+  const b=new THREE.Mesh(new THREE.SphereGeometry(.12,8,8),
+    new THREE.MeshBasicMaterial({color:0xffe600}));
+  b.position.set(player.x,1.65,player.z); scene.add(b);
+  bullets.push({mesh:b,vx:dir.x*1.8,vy:dir.y*1.8,vz:dir.z*1.8,mine:1});
+}
+
+function update(){
+  if(alive && document.pointerLockElement){
+    const sp=keys['shift']?.65:.36;
+    const fx=Math.sin(yaw),fz=Math.cos(yaw);
+    if(keys.w){player.x-=fx*sp;player.z-=fz*sp}
+    if(keys.s){player.x+=fx*sp;player.z+=fz*sp}
+    if(keys.a){player.x-=fz*sp;player.z+=fx*sp}
+    if(keys.d){player.x+=fz*sp;player.z-=fx*sp}
+
+    cool--;
+    if(cool<=0 && mouseDown){cool=9;shoot()}
+
+    zone.r=Math.max(25,zone.r-.018);
+    ring.scale.set(zone.r,zone.r,1);
+
+    for(const e of enemies){
+      const dx=player.x-e.mesh.position.x,dz=player.z-e.mesh.position.z;
+      const d=Math.hypot(dx,dz);
+      e.mesh.rotation.y=Math.atan2(dx,dz);
+      if(d>18){e.mesh.position.x+=dx/d*.065;e.mesh.position.z+=dz/d*.065}
+      else{
+        e.cool--;
+        if(e.cool<=0){
+          e.cool=80;
+          const dir=new THREE.Vector3(dx,0,dz).normalize();
+          const b=new THREE.Mesh(new THREE.SphereGeometry(.13,7,7),
+            new THREE.MeshBasicMaterial({color:0xff6600}));
+          b.position.set(e.mesh.position.x,1.65,e.mesh.position.z);
+          scene.add(b); bullets.push({mesh:b,vx:dir.x*1.0,vy:0,vz:dir.z*1.0,mine:0});
+        }
+      }
+    }
+
+    const keep=[];
+    for(const b of bullets){
+      b.mesh.position.x+=b.vx;b.mesh.position.y+=b.vy;b.mesh.position.z+=b.vz;
+      let hit=false;
+      if(b.mine){
+        for(let i=enemies.length-1;i>=0;i--){
+          const e=enemies[i];
+          const dx=b.mesh.position.x-e.mesh.position.x;
+          const dy=b.mesh.position.y-1.5;
+          const dz=b.mesh.position.z-e.mesh.position.z;
+          if(dx*dx+dy*dy+dz*dz<1.7){
+            scene.remove(e.mesh); enemies.splice(i,1); player.kills++; spawnEnemy(); hit=true; break;
+          }
+        }
+      }else{
+        const dx=b.mesh.position.x-player.x,dy=b.mesh.position.y-1.6,dz=b.mesh.position.z-player.z;
+        if(dx*dx+dy*dy+dz*dz<1.3){
+          let dmg=15;
+          if(player.armor>0){const a=Math.min(player.armor,dmg*.6);player.armor-=a;dmg-=a}
+          player.hp-=dmg;hit=true;
+          if(player.hp<=0)die('คุณถูกกำจัด! คิล: '+player.kills);
+        }
+      }
+      if(!hit && Math.abs(b.mesh.position.x)<450 && Math.abs(b.mesh.position.z)<450)keep.push(b);
+      else scene.remove(b.mesh);
+    }
+    bullets=keep;
+
+    for(let i=items.length-1;i>=0;i--){
+      const it=items[i];
+      it.mesh.rotation.y+=.03;
+      const d=Math.hypot(player.x-it.mesh.position.x,player.z-it.mesh.position.z);
+      if(d<2.5){
+        if(it.type==='armor')player.armor=Math.min(100,player.armor+35);
+        else player.hp=Math.min(100,player.hp+30);
+        scene.remove(it.mesh);items.splice(i,1);
+      }
+    }
+
+    if(Math.hypot(player.x-zone.x,player.z-zone.z)>zone.r){
+      player.hp-=.08;if(player.hp<=0)die('โดนเขตกิน!');
+    }
+    if(player.kills>=20)die('ชนะแล้ว! 🏆 คิล: '+player.kills);
+  }
+
+  camera.position.set(player.x,2.0,player.z);
+  camera.rotation.order='YXZ';camera.rotation.y=yaw;camera.rotation.x=pitch;
+  gunView.position.x=Math.sin(performance.now()*.004)*.008;
+  renderer.render(scene,camera);
+
+  document.getElementById('hud').innerHTML=
+    '❤️ เลือด: '+Math.max(0,Math.round(player.hp))+
+    ' | 🛡️ เกราะ: '+Math.round(player.armor)+
+    ' | 🔫 กระสุน: '+player.ammo+'/'+player.maxAmmo+
+    ' | 🏆 คิล: '+player.kills+
+    ' | 👾 ศัตรู: '+enemies.length+
+    ' | ⭕ เขต: '+Math.round(zone.r);
+}
+function loop(){requestAnimationFrame(loop);update()} loop();
+</script>
+</body>
+</html>
